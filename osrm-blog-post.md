@@ -19,7 +19,7 @@ For this reason, we often find ourselves analyzing delivery routes from a geospa
 
 ## Driving vs "straight-line" distances
 
-It is very important that distances between stops are taken into account accurately, because if were to use the "straight-line" (aka "great circle", "as the crow flies", "haversine", etc.) distance between two points on the globe, you could potentially vastly underestimate the actual distance that a vehicle would have to drive between those points.
+It is very important that distances between stops are taken into account accurately, because if we were to use the "straight-line" (aka "great circle", "as the crow flies", "haversine", etc.) distance between two points on the globe, you could potentially vastly underestimate the actual distance that a vehicle would have to drive between those points.
 [A study from the NY State Cancer Registry and U. of Albany](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/) (interesting source for a study on driving distances!) found that on average, the actual driving distance between two points is roughly 40% higher than what you would get if you used the "straight-line" distance, which can greatly influence your analysis!
 
 [//]: # "* Using Google Maps API to get this information is pretty simple, but can be expensive if you have a lot of delivery stops/routes that you need to analyze"
@@ -47,7 +47,7 @@ If only there was an open source version of the Google Maps API that you could r
 
 You may have heard of [OpenStreetMap](https://www.openstreetmap.org/); it's basically a free, open-source version of Google Maps, where the maps are maintained and updated by an army of dedicated volunteers.
 It has some basic routing capabilities that you can use manually, and an API, but it's mostly focused on maintaining the maps rather than extracting and analyzing data from them.
-Enter OSRM (Open Source Routing Machine) - an open source software solution build on top of OpenStreetMap's map data that is capable of calculating routes between locations on the fly, and very quickly too.
+Enter OSRM (Open Source Routing Machine) - an open source software solution built on top of OpenStreetMap's map data that is capable of calculating routes between locations on the fly, and very quickly too.
 In a nutshell, it's your own personal version of Google Maps API.
 You set up a server which accepts HTTP requests containing the location information of the stops, and it returns some data depending on what kind of answer you're asking for (there are [many services](http://project-osrm.org/docs/v5.22.0/api/?language=Python#requests) available, like distance matrix, fastest route, nearest road, etc).
 
@@ -100,7 +100,7 @@ You may also have to [grant editor privleges](https://cloud.google.com/iam/docs/
 gcloud config set project <your project id>
 ```
 
-Now boot up the machine (if it isn't already running) and ssh in:
+Now boot up the machine (if it isn't already running) and ssh in (I'd make an `alias` for these commands too in your `.bashrc`; you'll be using them a lot):
 
 ```bash
 gcloud compute instances start <instance name> --zone <compute zone>
@@ -201,7 +201,7 @@ tmux a -t osrm
 ```
 
 After that's complete, you'll see that there a bunch of new files in the `~/osrm/maps/` directory that were produced during the extraction process.
-Finally
+Finally, start the contraction hierarchy pre-processing by running
 
 ```bash
 sudo docker run -t -v "${PWD}:/data" osrm/osrm-backend osrm-contract --thread 8 /data/north-america-latest.osrm
@@ -211,6 +211,9 @@ This one will take several hours to run, so go watch a movie, or run it overnigh
 If you get some error, it's probably because you don't have enough RAM, so you'll need to resize your VM and try again.
 You'll probably also get several `[warning]`s during the process; these are most likely harmless, so don't worry about them.
 
+Once this final step is done, shut down your VM as soon as you can to avoid having to pay any more for using large amounts of RAM; from now on, we won't need as much to run the server.
+I was able to get away with using 30 GB of RAM for the `north-america-latest` map.
+You can check your memory usage by running `free -h` in the terminal.
 
 ## Using OSRM from the terminal/browser
 [//]: # "* How to initialize OSRM server"
@@ -241,27 +244,29 @@ osrm-routed     # start the OSRM server
 [//]: # "* How to make requests against the server"
 [//]: # "* Point to the documentation for more details"
 
-Once it starts (run `sudo docker logs -f osrm` to view the output; it'll print out some stuff like "starting engines... threads... IP address/port..."; when it says `[info] running and waiting for requests`, go ahead and `Ctrl+C` to stop following the logs) we can go ahead and make requests against the server.
+Once it starts (run `sudo docker logs -f osrm` to view the output; it'll print out some stuff like "starting engines... threads... IP address/port..."; when it says `[info] running and waiting for requests`, go ahead and `Ctrl+C` to stop following the logs... or keep following them, up to you) we can go ahead and make requests against the server. For example:
 
 ```bash
 curl "http://localhost:80/route/v1/driving/-80.868670,35.388501;-80.974886,35.236367?steps=true"
 ```
 
 Refer to [the documentation](http://project-osrm.org/docs/v5.22.0/api/#requests) for the finer details on how to structure your request; there are also examples on the right-hand side of the page.
+We'll also discuss this a bit more in the python section below.
 Running the above command in the terminal on your VM should return a JSON payload containing all the turn-by-turn details of how to get from the first set of coordinates to the second.
 (In this JSON will be a polyline encoding that looks like a garbled mess of characters; you can decode this by pasting it into Google Map's [interactive polyline utility](https://developers.google.com/maps/documentation/utilities/polylineutility).)
 If you replace `localhost` with your external IP, then you can directly paste the URL into the browser window on your local machine and see the same output (probably formatted a bit nicer too).
 All you need to do is replace `router.project-osrm.org` in the examples with the domain name of your server, which is `localhost:80` if you're executing this on the VM, or if you want to send requests to the VM from your local machine, you need to look up the "external IP" for the VM in the cloud console.
-Actually, 80 is a special port - you don't even need to include it when making requests because it's the default HTTP port - but I'll keep using it for completeness' sake, or if you want to use a different port for your own purposes, though you'll have to adjust your GCP [firewall rules](https://cloud.google.com/vpc/docs/firewalls) to allow traffic to connect through the port.
+Actually, 80 is a special port - you don't even need to include it when making requests because it's the default HTTP port - but I'll keep using it for completeness' sake.
+If you want to use a different port for your own purposes, you'll have to adjust your GCP [firewall rules](https://cloud.google.com/vpc/docs/firewalls) to allow traffic to connect through the port.
 
-Also, be warned, the external IP changes every time you start/stop your machine!
+Also, be warned, the VM's external IP changes every time you start/stop your machine!
 You can either look this up manually from the GCP console every time, or you can script it using the command
 
 ```bash
 export EXTERNAL_IP=$(gcloud compute instances describe $INSTANCE_NAME --zone=$GCP_ZONE --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
 ```
 
-so that you can easily access it through an environment variable such as `echo $EXTERNAL_IP`.
+so that you can easily access it through an environment variable such as `echo $EXTERNAL_IP`. (`INSTANCE_NAME` and `GCP_ZONE` will have to be defined in order for this to work.)
 
 
 If you want to shut the server down, all you need to do is `sudo docker kill osrm`.
@@ -278,13 +283,13 @@ The [`table` service](http://project-osrm.org/docs/v5.22.0/api/#table-service) w
 The [`match` service](http://project-osrm.org/docs/v5.22.0/api/#match-service) is similar to the `nearest` service in that it finds the nearest road to a point, but is more general because it can generate directions along the path defined.
 The [`tile` service](http://project-osrm.org/docs/v5.22.0/api/#tile-service) will actually return an image of a section the map, albeit in a "vector tile" format, which contains metadata about the road network.
 
-We'll be using the `route` and `table` services going forward, but I urge you to check out the other ones; there is some cool stuff you can do with it!
+We'll just be using the `route` service going forward, but I urge you to check out the other ones; there is some cool stuff you can do with it!
 
 ## Using OSRM through Python
 [//]: # "* Write some simple functions using `requests` library to send requests to OSRM server from python"
 [//]: # "* There's probably some python package out there that wraps OSRM people can download"
 Now we're going to get into the actual data analysis part! We're going to need some way of interacting with the OSRM server through python.
-There are already a couple packages out there already to do this for you, notably [`python-osrm`](https://github.com/ustroetz/python-osrm) and [`osrm-py`](https://github.com/gojuno/osrm-py), but we're going to roll our own because it's really not that hard and I could use the practice.
+There are already a couple packages out there already to do this for you, notably [`python-osrm`](https://github.com/ustroetz/python-osrm) and [`osrm-py`](https://github.com/gojuno/osrm-py), but we're going to roll our own because it's really not that hard and it will get you more familiar with how the HTTP requests and responses are structured.
 
 To make HTTP requests against our server, we're going to use the python [`requests`](https://requests.kennethreitz.org/en/master/) package, which makes it easy to handle HTTP and submit requests to the OSRM API.
 First off, we will need to understand how to structure our requests so that the server will understand them.
@@ -382,7 +387,7 @@ def route_dt(self, coords: np.ndarray):
     return (x['distance']/self.METERS_PER_MILE, x['duration']/self.SEC_PER_HOUR)
 ```
 
-If we could get into the "guts" of the function, we see the JSON object that is returned, `x` has multiple pieces, which you can get by using `x.keys()`.
+If we could get into the "guts" of the function, we see the JSON object that is returned, `x`, has multiple pieces, which you can get by using `x.keys()`.
 
 ```python
 >>> x.keys()
@@ -401,7 +406,7 @@ Then we can add a method to our `Connection` class to handle the request and dec
 
 ```python
 def route_polyline(self, coords: np.ndarray, resolution: str='low'
-    ) -> List[Tuple[float, float]]::
+    ) -> List[Tuple[float, float]]:
     """Returns polyline of route path as a list of (lat, lon) coordinates.
     """
     assert resolution in ('low', 'high')
@@ -557,6 +562,7 @@ plt.show()
 Looks like the vast majority of our stops are pretty efficient!
 Only 5.3 minutes on average, and half of them are 4 minutes or less!
 We can only speculate what the outliers may be, but I would guess that they are probably due to issues like the wrong order was shipped, or the driver had to go searching/wait for someone to sign the receipt acknowledging delivery.
+Either way, these long stop layovers are very rare.
 
 ## Visualizing delivery routes
 Alright, so I promised route visualization and using OSRM in the title; where is it??!
@@ -689,10 +695,12 @@ for key, route_ids in zip(['AM','PM'], [am_route_ids, pm_route_ids]):
                 ).add_to(maps[key])
 ```
 
+### AM delivery routes
 <div>
 <iframe src="map_files/full-AM-route-map.html" style="width: 500px; height: 500px;"></iframe>
 </div>
 
+### PM delivery routes
 <div>
 <iframe src="map_files/full-PM-route-map.html" style="width: 500px; height: 500px;"></iframe>
 </div>
@@ -703,7 +711,7 @@ Then there are routes that are kind of combinations of other routes.
 For example, in the AM, we have route `R`, that hits customers in both Statesville and Salisbury, but in the PM, these customers are split between routes `S` and `T`.
 Similarly, in the PM, we have customers near Lancaster and Rock Hill that are all serviced by route `G`, but in the AM they are split between routes `H` and `V`.
 
-These interactive maps contain a lot of information that you couldn't reasonably put on a static map. For example, hovering over a customer location will give you the route they were visited on and which order they were delivered to. Clicking on the location will give the (lat, lon) coordinates and the arrival-departure times. Hovering over a route will give you the route ID, and clicking will give a popup that tells you the expected distance and time it would take to traverse this leg of the route (as calculated by OSRM).
+These interactive maps contain a lot of information that you couldn't reasonably put on a static map. For example, hovering over a customer location will give you the route they were visited on and which order they were delivered to. Clicking on the location will give the (lat, lon) coordinates and the arrival-departure times. Hovering over a route polyline will give you the route ID, and clicking will give a popup that tells you the expected distance and time it would take to traverse this leg of the route (as calculated by OSRM).
 
 ## Conclusion
 [//]: # "* Recap all the steps"
@@ -718,6 +726,20 @@ So just to recap, here's all the things that we learned in this post:
 5. How to visualize geospatial data using `folium`
 
 That's a lot of stuff!
+And we did it all on a pretty tight budget: $0.
+Just to prove to you that this is not going to break the bank, here's a screenshot of my GCP billing status:
+
+![gcp-free-credits-left](images/gcp-free-credits-left.png)
+
+I spent roughly $60 in cloud credits while writing this post, but your costs should be significantly less; the reason mine were so "high" can be attributed to several things:
+
+* I screwed up sizing the RAM on my VM twice before I figured out the right amount and had to run the OSRM pre-computation step multiple times
+* I accidentally left the instance on (idling) overnight while it was allocated 100 GB of RAM
+* I was lazy and regularly left the VM on while I was writing the blog post, working on other things, or going to get lunch
+
+If you're very efficient and can figure out the right amount of RAM to use to run the OSRM pre-computation the first time, it wouldn't surprise me if you could do all this for less than $10 in cloud credits.
+Even if your efficiency is terrible, you can get $300 in free credits for just signing up with GCP, so you've got nothing to lose.
+
 I hope you enjoyed following along and learned some helpful analysis techniques.
 I certainly did too.
 If you want to see all the code in one place, I have made available a [GitHub repository](https://github.com/ecotner/osrm-blog) with the jupyter notebook used to generate all the maps, and the dataset used in a `.csv` format.
