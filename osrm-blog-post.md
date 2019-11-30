@@ -1,4 +1,10 @@
-# Using Google Cloud and OSRM for analyzing delivery routes in Python
+So I've been working on this project at work lately trying to optimize deliveries to customers that involves a lot of geospatial analysis and computation of driving distances and times.
+We thought it would be a good idea to write up a blog post about the tools we're using to do this analysis (and I will probably write another post about the project itself later), so here it is.
+
+This is a slight modification of the original post, which you can find on ATD's Medium blog.
+Unfortunately for Medium, they don't allow interactive HTML elements (or the use of Markdown at all!), and I wanted to show off all the cool interactive visualizations that you can make by using `folium`/`leaflet.js`, which I can do here on my blog, since I like... own the website.
+
+## Motivation
 [//]: # "* Give some BS about how many deliveries ATD makes every year, total miles driven, etc."
 
 At ATD, we make a lot of deliveries to our customers.
@@ -69,7 +75,7 @@ This may be too much for a single machine to handle, especially if you're just a
 But don't stop reading yet!
 There are cheap and abundant cloud computing resources that were made for just this purpose.
 For this scenario, I'm going to use [Google Cloud Platform (GCP)](https://cloud.google.com/gcp/).
-If you sign up for a new account, they'll give you a $300 credit too, which is more than enough to cover the compute costs.
+If you sign up for a new account, they'll give you a \$300 credit too, which is more than enough to cover the compute costs.
 I'll walk you through it if you don't already have a GCP account set up.
 Go ahead and skip this part if you already have a cloud provider or want to use your own machine.
 
@@ -78,7 +84,7 @@ Go to https://cloud.google.com/gcp/, sign up for the free trial (it'll ask you f
 It'll take a minute to boot up the first time, but once it's done, click "Create" to make a new instance.
 You'll see an image like the one below
 
-![gcp-vm-setup](images/gcp-vm-setup.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/gcp-vm-setup.png)
 
 The only thing you really need to make sure of is that you have enough persistent disk space to hold both the map files and all the files created during the pre-processing step, and the machine allows HTTP traffic so that we can make requests against the OSRM server from our local machine.
 When you check the "allow HTTP traffic" it will allow you to make requests against the server through port 80 (and 443 for HTTP**S**).
@@ -94,7 +100,7 @@ gcloud auth login <your account username>
 ```
 
 which will open a series of browser windows you need to click through.
-You may also have to [grant editor privleges](https://cloud.google.com/iam/docs/granting-changing-revoking-access#granting_access_to_team_members) to your sevice account before starting the machine. You need to set your current project, whose id you can find from the GCP console by clicking on the dropdown in the upper left corner: ![gcp-project-icon](images/gcp-project-icon.png). Use that in the following command:
+You may also have to [grant editor privleges](https://cloud.google.com/iam/docs/granting-changing-revoking-access#granting_access_to_team_members) to your sevice account before starting the machine. You need to set your current project, whose id you can find from the GCP console by clicking on the dropdown in the upper left corner: ![gcp-project-icon](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/gcp-project-icon.png). Use that in the following command:
 
 ```bash
 gcloud config set project <your project id>
@@ -145,7 +151,7 @@ Running this pre-processing step is very computationally expensive, but once it'
 OSRM has two algorithms that it uses to calculate routes, called [multi-level Djikstra](https://github.com/Project-OSRM/osrm-backend/issues/4797) and [contraction hierarchies](https://en.wikipedia.org/wiki/Contraction_hierarchies).
 We'll be using the latter because it's faster (but less flexible in some cases).
 
-Because this pre-processing is so memory-intensive, we're going to need more RAM.
+Because this pre-processing is so memory-intensive, we're going to [need more RAM.](https://downloadmoreram.com/download.html)
 But that's the beauty of cloud computing - if you need more resources, all you need to do is ask for them!
 First we need to shut down our VM by returning to our local machine and running
 
@@ -157,15 +163,15 @@ or simply go to the GCP console, select your instance and click "Stop".
 In the console, click into your instance's details, hit "Edit", then change your machine configuration to one with more memory.
 I'm going to use a custom machine type that provides 100 GB of RAM, which is probably just enough to handle the preprocessing for the North America map (I tried it with 60 GB earlier and ran out of memory). Unfortunately, GCP limits new accounts to using 8 vCPU's max, unless you send them a request to increase. I'll just stick with 8, but if you can get more, it'll make the process go faster.
 
-![gcp-machine-config](images/gcp-machine-config.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/gcp-machine-config.png)
 
 If you're processing a larger map, use more RAM (recall the rule of thumb is 10 times the disk size of the map file).
-This will be the most "expensive" step, and should cost between $5-$10 depending on how big a machine you're using and how long it runs for.
-If you're using the $300 credit for a new GCP signup, this won't even make a dent in it.
+This will be the most "expensive" step, and should cost between \$5-\$10 depending on how big a machine you're using and how long it runs for.
+If you're using the \$300 credit for a new GCP signup, this won't even make a dent in it.
 You can handily estimate the cost by using GCP's [pricing calculator](https://cloud.google.com/products/calculator/) - change the "Average hours per day each server is running" to "per month" and input the number of hours you think it'll take to do the install.
 I'd budget at least 10 hours for the North America map, but YMMV.
 
-![gcp-instance-price](images/gcp-instance-price.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/gcp-instance-price.png)
 
 Now start up your machine with
 
@@ -295,14 +301,14 @@ To make HTTP requests against our server, we're going to use the python [`reques
 First off, we will need to understand how to structure our requests so that the server will understand them.
 The OSRM server API takes in requests in the format
 
-```
+```plaintext
 GET /{service}/{version}/{profile}/{coordinates}[.{format}]?option=value&option=value
 ```
 
 The `service` is one of the ones mentioned above (`route`, `table`, etc.), the `version` is `v1` as of this writing, `profile` should be something like `driving`, `car`, `bicycle`, or `foot`.
 The `coordinates` are a list of longitude/latitude coordinates separated by semicolons `;`. For example, a list of the (latitude, longitude) coordinates `(67.891, 12.345)`, `(78.912, -23.456)`, `(89.123, 34.567)` would be formatted like:
 
-```
+```plaintext
 coordinates = 12.345,67.891;-23.456,78.912;34.567,89.123
 ```
 
@@ -437,7 +443,7 @@ raw_df['departure_time'] = pd.to_datetime(raw_df['departure_time'])
 raw_df.head()
 ```
 
-```
+```plaintext
   route_id   latitude  longitude        arrival_time      departure_time
 0        A  35.237665 -81.343199 2019-11-11 12:53:22 2019-11-11 13:10:00
 1        A  35.274080 -81.520423 2019-11-11 13:28:46 2019-11-11 13:31:06
@@ -457,7 +463,7 @@ print("# null elements:")
 print(raw_df.isna().sum())
 ```
 
-```
+```plaintext
 Total # rows: 377
 # null elements:
 route_id           0
@@ -475,7 +481,7 @@ Looks like there are some null arrival/departure times... what does that mean?
 raw_df[raw_df.isna().any(axis=1)].head(8)
 ```
 
-```
+```plaintext
    route_id   latitude  longitude        arrival_time      departure_time
 16        A  35.237393 -80.974431 2019-11-11 18:46:11                 NaT
 17        A  35.237393 -80.974431                 NaT 2019-11-11 12:00:20
@@ -520,7 +526,7 @@ plt.ylabel('Count')
 plt.show()
 ```
 
-![route-stop-time-distribution](images/route-stop-time-distribution.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/route-stop-time-distribution.png)
 
 Looks like most of the activity is grouped into two periods - early afternoon and evening deliveries. We can see this more clearly if we look at the initial departure time of each route:
 
@@ -536,7 +542,7 @@ plt.ylabel('Count')
 plt.show()
 ```
 
-![route-departure-time-distribution](images/route-departure-time-distribution.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/route-departure-time-distribution.png)
 
 Yep, the routes are definitely separated out into (late morning)/(early afternoon) and late afternoon deliveries.
 Makes sense, because ATD advertises twice-daily deliveries if you need them.
@@ -557,7 +563,7 @@ plt.ylabel('Count')
 plt.show()
 ```
 
-![delivery-layover-distribution](images/delivery-layover-distribution.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/delivery-layover-distribution.png)
 
 Looks like the vast majority of our stops are pretty efficient!
 Only 5.3 minutes on average, and half of them are 4 minutes or less!
@@ -582,7 +588,9 @@ for _, row in stops_df.iterrows():
 m
 ```
 <div>
-<iframe src="map_files/all-customers.html" style="width: 500px; height: 500px;"></iframe>
+<center>
+<iframe src="{{ url_for('static', filename='media/blog_assets/osrm_maps/all-customers.html') }}" style="width: 500px; height: 500px;"></iframe>
+</center>
 </div>
 
 So now, let's start mapping routes. `folium` has a `PolyLine` class that we can use to specify the line by passing in a sequence of (lat, lon) coordinates - exactly what we designed our `Connection.route_polyline` method to return!
@@ -620,7 +628,9 @@ m
 ```
 
 <div>
-<iframe src="map_files/single-route.html" style="width: 500px; height: 500px;"></iframe>
+<center>
+<iframe src="{{ url_for('static', filename='media/blog_assets/osrm_maps/single-route.html') }}" style="width: 500px; height: 500px;"></iframe>
+</center>
 </div>
 
 That's pretty cool.
@@ -697,12 +707,16 @@ for key, route_ids in zip(['AM','PM'], [am_route_ids, pm_route_ids]):
 
 ### AM delivery routes
 <div>
-<iframe src="map_files/full-AM-route-map.html" style="width: 500px; height: 500px;"></iframe>
+<center>
+<iframe src="{{ url_for('static', filename='media/blog_assets/osrm_maps/full-AM-route-map.html') }}" style="width: 500px; height: 500px;"></iframe>
+</center>
 </div>
 
 ### PM delivery routes
 <div>
-<iframe src="map_files/full-PM-route-map.html" style="width: 500px; height: 500px;"></iframe>
+<center>
+<iframe src="{{ url_for('static', filename='media/blog_assets/osrm_maps/full-PM-route-map.html') }}" style="width: 500px; height: 500px;"></iframe>
+</center>
 </div>
 
 Now we can see the routes in all their glory.
@@ -726,19 +740,19 @@ So just to recap, here's all the things that we learned in this post:
 5. How to visualize geospatial data using `folium`
 
 That's a lot of stuff!
-And we did it all on a pretty tight budget: $0.
+And we did it all on a pretty tight budget: \$0.
 Just to prove to you that this is not going to break the bank, here's a screenshot of my GCP billing status:
 
-![gcp-free-credits-left](images/gcp-free-credits-left.png)
+![blog-img](https://raw.githubusercontent.com/ecotner/osrm-blog/master/images/gcp-free-credits-left.png)
 
-I spent roughly $60 in cloud credits while writing this post, but your costs should be significantly less; the reason mine were so "high" can be attributed to several things:
+I spent roughly \$60 in cloud credits while writing this post, but your costs should be significantly less; the reason mine were so "high" can be attributed to several things:
 
 * I screwed up sizing the RAM on my VM twice before I figured out the right amount and had to run the OSRM pre-computation step multiple times
 * I accidentally left the instance on (idling) overnight while it was allocated 100 GB of RAM
 * I was lazy and regularly left the VM on while I was writing the blog post, working on other things, or going to get lunch
 
-If you're very efficient and can figure out the right amount of RAM to use to run the OSRM pre-computation the first time, it wouldn't surprise me if you could do all this for less than $10 in cloud credits.
-Even if your efficiency is terrible, you can get $300 in free credits for just signing up with GCP, so you've got nothing to lose.
+If you're very efficient and can figure out the right amount of RAM to use to run the OSRM pre-computation the first time, it wouldn't surprise me if you could do all this for less than \$10 in cloud credits.
+Even if your efficiency is terrible, you can get \$300 in free credits for just signing up with GCP, so you've got nothing to lose.
 
 I hope you enjoyed following along and learned some helpful analysis techniques.
 I certainly did too.
